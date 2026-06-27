@@ -288,47 +288,54 @@ app.get('/webhook', (req, res) => {
 });
 
 app.post('/webhook', async (req, res) => {
-  try {
-    const rawBody = req.body ? req.body.toString() : '';
-    console.log('[请求] POST /webhook, 长度:', rawBody.length);
-
-    let body;
+  // 手动收集 body，不依赖 Express 中间件
+  const chunks = [];
+  req.on('data', (chunk) => chunks.push(chunk));
+  req.on('end', async () => {
     try {
-      body = JSON.parse(rawBody);
-    } catch {
-      console.error('[错误] 无法解析 JSON');
-      return res.json({ code: -1, msg: 'invalid body' });
-    }
+      const rawBody = Buffer.concat(chunks).toString('utf8');
+      console.log('[请求] POST /webhook, 长度:', rawBody.length);
+      if (rawBody.length < 2000) console.log('[请求] body:', rawBody);
 
-    // 飞书可能直接发未加密的 URL 验证请求
-    if (body.type === 'url_verification' && body.challenge) {
-      console.log('[验证] 明文 URL 验证, challenge:', body.challenge);
-      return res.json({ challenge: body.challenge });
-    }
+      if (!rawBody) {
+        return res.json({ code: -1, msg: 'empty body' });
+      }
 
-    if (!body.encrypt) {
-      console.log('[请求] 无 encrypt 字段, keys:', Object.keys(body));
-      return res.json({ code: -1, msg: 'no encrypt field' });
-    }
+      let body;
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        console.error('[错误] JSON 解析失败');
+        return res.json({ code: -1, msg: 'invalid json' });
+      }
 
-    const decryptedRaw = decryptFeishu(CONFIG.feishu.encryptKey, body.encrypt);
-    const decrypted = typeof decryptedRaw === 'string' ? JSON.parse(decryptedRaw) : decryptedRaw;
-    console.log('[解密] type:', decrypted.type, 'keys:', Object.keys(decrypted).join(','));
+      // 飞书可能直接发未加密的 URL 验证请求
+      if (body.type === 'url_verification' && body.challenge) {
+        console.log('[验证] 明文 URL 验证');
+        return res.json({ challenge: body.challenge });
+      }
 
-    if (decrypted.type === 'url_verification') {
-      console.log('[验证] 加密 URL 验证, challenge:', decrypted.challenge);
-      return res.json({ challenge: decrypted.challenge });
-    }
+      if (!body.encrypt) {
+        console.log('[请求] keys:', JSON.stringify(Object.keys(body)));
+        return res.json({ code: -1, msg: 'no encrypt' });
+      }
 
-    // 业务事件：先回 200，再异步处理
-    res.json({ code: 0 });
-    await handleEvent(decrypted);
-  } catch (err) {
-    console.error('[错误] Webhook 异常:', err.message);
-    if (!res.headersSent) {
-      res.json({ code: -1, msg: 'error' });
+      const decryptedRaw = decryptFeishu(CONFIG.feishu.encryptKey, body.encrypt);
+      console.log('[解密] 成功, 类型:', decryptedRaw.type);
+
+      if (decryptedRaw.type === 'url_verification') {
+        console.log('[验证] 加密 URL 验证');
+        return res.json({ challenge: decryptedRaw.challenge });
+      }
+
+      // 业务事件
+      res.json({ code: 0 });
+      await handleEvent(decryptedRaw);
+    } catch (err) {
+      console.error('[错误] Webhook:', err.message);
+      if (!res.headersSent) res.json({ code: -1, msg: 'error' });
     }
-  }
+  });
 });
 
 // 健康检查
