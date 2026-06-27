@@ -289,23 +289,34 @@ app.get('/webhook', (req, res) => {
 
 app.post('/webhook', async (req, res) => {
   try {
+    const rawBody = req.body.toString();
+    console.log('[请求] POST /webhook, 长度:', rawBody.length, '前200:', rawBody.slice(0, 200));
+
     let body;
     try {
-      body = JSON.parse(req.body.toString());
+      body = JSON.parse(rawBody);
     } catch {
-      console.error('[错误] 无法解析请求体');
+      console.error('[错误] 无法解析 JSON');
       return res.json({ code: -1, msg: 'invalid body' });
     }
 
+    // 飞书可能直接发未加密的 URL 验证请求
+    if (body.type === 'url_verification' && body.challenge) {
+      console.log('[验证] 明文 URL 验证, challenge:', body.challenge);
+      return res.json({ challenge: body.challenge });
+    }
+
     if (!body.encrypt) {
+      console.log('[请求] 无 encrypt 字段, keys:', Object.keys(body));
       return res.json({ code: -1, msg: 'no encrypt field' });
     }
 
-    const decrypted = decryptFeishu(CONFIG.feishu.encryptKey, body.encrypt);
+    const decryptedRaw = decryptFeishu(CONFIG.feishu.encryptKey, body.encrypt);
+    const decrypted = typeof decryptedRaw === 'string' ? JSON.parse(decryptedRaw) : decryptedRaw;
+    console.log('[解密] type:', decrypted.type, 'keys:', Object.keys(decrypted).join(','));
 
-    // URL 验证事件 → 必须返回 challenge
     if (decrypted.type === 'url_verification') {
-      console.log('[验证] URL 验证成功');
+      console.log('[验证] 加密 URL 验证, challenge:', decrypted.challenge);
       return res.json({ challenge: decrypted.challenge });
     }
 
@@ -313,7 +324,7 @@ app.post('/webhook', async (req, res) => {
     res.json({ code: 0 });
     await handleEvent(decrypted);
   } catch (err) {
-    console.error('[错误] Webhook 处理异常:', err.message);
+    console.error('[错误] Webhook 异常:', err.message);
     if (!res.headersSent) {
       res.json({ code: -1, msg: 'error' });
     }
