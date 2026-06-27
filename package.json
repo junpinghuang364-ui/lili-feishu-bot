@@ -1,0 +1,16 @@
+{
+  "name": "lili-feishu-bot",
+  "version": "1.0.0",
+  "description": "lili 情感咨询飞书机器人 - 24x7 在线",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.0",
+    "dotenv": "^16.4.0",
+    "express": "^4.21.0",
+    "openai": "^4.67.0"
+  }
+}
