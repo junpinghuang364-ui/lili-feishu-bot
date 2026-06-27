@@ -288,33 +288,35 @@ app.get('/webhook', (req, res) => {
 });
 
 app.post('/webhook', async (req, res) => {
-  // 立即返回 200，不阻塞飞书的回调超时
-  res.json({ code: 0 });
-
   try {
     let body;
     try {
       body = JSON.parse(req.body.toString());
     } catch {
       console.error('[错误] 无法解析请求体');
-      return;
+      return res.json({ code: -1, msg: 'invalid body' });
     }
 
-    // 解密
-    if (body.encrypt) {
-      const decrypted = decryptFeishu(CONFIG.feishu.encryptKey, body.encrypt);
-
-      // URL 验证事件
-      if (decrypted.type === 'url_verification') {
-        console.log('[验证] URL 验证');
-        return;
-      }
-
-      // 业务事件
-      await handleEvent(decrypted);
+    if (!body.encrypt) {
+      return res.json({ code: -1, msg: 'no encrypt field' });
     }
+
+    const decrypted = decryptFeishu(CONFIG.feishu.encryptKey, body.encrypt);
+
+    // URL 验证事件 → 必须返回 challenge
+    if (decrypted.type === 'url_verification') {
+      console.log('[验证] URL 验证成功');
+      return res.json({ challenge: decrypted.challenge });
+    }
+
+    // 业务事件：先回 200，再异步处理
+    res.json({ code: 0 });
+    await handleEvent(decrypted);
   } catch (err) {
     console.error('[错误] Webhook 处理异常:', err.message);
+    if (!res.headersSent) {
+      res.json({ code: -1, msg: 'error' });
+    }
   }
 });
 
