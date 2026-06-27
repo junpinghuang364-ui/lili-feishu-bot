@@ -17,7 +17,7 @@ const axios = require('axios');
 const OpenAI = require('openai');
 
 const app = express();
-app.use(express.raw({ type: 'application/json' }));
+app.use(express.raw({ type: '*/*', limit: '1mb' }));
 
 // ============================================================
 // 配置
@@ -289,8 +289,8 @@ app.get('/webhook', (req, res) => {
 
 app.post('/webhook', async (req, res) => {
   try {
-    const rawBody = req.body.toString();
-    console.log('[请求] POST /webhook, 长度:', rawBody.length, '前200:', rawBody.slice(0, 200));
+    const rawBody = req.body ? req.body.toString() : '';
+    console.log('[请求] POST /webhook, 长度:', rawBody.length);
 
     let body;
     try {
